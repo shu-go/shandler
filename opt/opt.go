@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"sync"
 )
 
 type NewHandlerFunc func(*slog.HandlerOptions) slog.Handler
@@ -35,15 +36,24 @@ type OptHandler struct {
 	inner slog.Handler
 
 	newfunc NewHandlerFunc
-	opts    *slog.HandlerOptions
+
+	mu   *sync.Mutex
+	opts slog.HandlerOptions
 }
 
 func NewHandler(newfunc NewHandlerFunc, opts *slog.HandlerOptions) *OptHandler {
-	return &OptHandler{
+	h := &OptHandler{
 		inner:   newfunc(opts),
 		newfunc: newfunc,
-		opts:    opts,
 	}
+	if opts != nil {
+		h.opts = *opts
+	}
+	if h.opts.Level == nil {
+		h.opts.Level = slog.LevelInfo
+	}
+
+	return h
 }
 
 func (h *OptHandler) Enabled(ctx context.Context, level slog.Level) bool {
@@ -71,32 +81,21 @@ func (h *OptHandler) WithGroup(name string) slog.Handler {
 }
 
 func renew(h *OptHandler) {
-	h.inner = h.newfunc(h.opts)
+	opts := h.opts
+	h.inner = h.newfunc(&opts)
 }
 
 func (h *OptHandler) AddSource(addSource bool) {
-	if h.opts == nil {
-		h.opts = &slog.HandlerOptions{}
-	}
-
 	h.opts.AddSource = addSource
 	renew(h)
 }
 
 func (h *OptHandler) Level(level slog.Level) {
-	if h.opts == nil {
-		h.opts = &slog.HandlerOptions{}
-	}
-
 	h.opts.Level = level
 	renew(h)
 }
 
 func (h *OptHandler) ReplaceAttr(replaceAttrr func(groups []string, a slog.Attr) slog.Attr) {
-	if h.opts == nil {
-		h.opts = &slog.HandlerOptions{}
-	}
-
 	h.opts.ReplaceAttr = replaceAttrr
 	renew(h)
 }
