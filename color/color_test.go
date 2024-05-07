@@ -2,9 +2,11 @@ package color_test
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 
 	fatihsan "github.com/fatih/color"
@@ -88,6 +90,32 @@ func TestColor(t *testing.T) {
 			slog.String("str1", "value1"),
 			slog.Int("int2", 2),
 		)
+	})
+
+	t.Run("ReplaceAttr", func(t *testing.T) {
+		cb.Reset()
+		cl := slog.New(color.NewHandler(cb, &slog.HandlerOptions{
+			ReplaceAttr: func(group []string, a slog.Attr) slog.Attr {
+				fmt.Fprintf(os.Stderr, "group: %+v\n", group)
+				if strings.HasPrefix(a.Key, "str") {
+					a.Value = slog.StringValue(strings.ToUpper(a.Value.String()))
+				} else if strings.HasPrefix(a.Key, "int") {
+					// groups: ["group1", "group2"]
+					a.Value = slog.Int64Value(a.Value.Int64() * int64(len(group)+1))
+				} else if strings.HasPrefix(a.Key, "bool") {
+					a = slog.Attr{}
+				}
+				return a
+			},
+		}, color.DefaultNilScheme()))
+		cl.With(slog.String("str0", "value1"), slog.Bool("bool1", true)).WithGroup("grp1").With(slog.Int("int1", 1)).WithGroup("grp2").Info(
+			"message",
+			slog.String("str1", "value1"),
+			slog.Int("int2", 2),
+			slog.Bool("bool2", false),
+		)
+		gotwant.Test(t, cb.String(), "INFO message str0=VALUE1 grp1.int1=2 grp1.grp2.str1=VALUE1 grp1.grp2.int2=6\n", gotwant.Format("%q"))
+
 	})
 }
 

@@ -71,7 +71,7 @@ func (h *ColorHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 			continue
 		}
 
-		h2attrs = appendAttr(h2attrs, prefix, attrs[i], pk, pv, pn)
+		h2attrs = appendAttr(h2attrs, prefix, attrs[i], h.opts.ReplaceAttr, h.groups, pk, pv, pn)
 	}
 
 	h2.attrs = h2attrs
@@ -186,7 +186,7 @@ func (h *ColorHandler) Handle(ctx context.Context, r slog.Record) error {
 		}
 
 		prefix := strings.Join(h.groups, ".")
-		buf = appendAttr(buf, prefix, a, pk, pv, pn)
+		buf = appendAttr(buf, prefix, a, h.opts.ReplaceAttr, h.groups, pk, pv, pn)
 
 		return true
 	})
@@ -224,7 +224,7 @@ func (h ColorHandler) clone() *ColorHandler {
 	return &h2
 }
 
-func appendAttr(buf []byte, prefix string, a slog.Attr, pk, pv, pb Colorizer) []byte {
+func appendAttr(buf []byte, prefix string, a slog.Attr, rep func(groups []string, a slog.Attr) slog.Attr, groups []string, pk, pv, pb Colorizer) []byte {
 	a.Value.Resolve()
 
 	if a.Value.Kind() == slog.KindGroup {
@@ -234,9 +234,17 @@ func appendAttr(buf []byte, prefix string, a slog.Attr, pk, pv, pb Colorizer) []
 			prefix += "." + a.Key
 		}
 		for _, child := range a.Value.Group() {
-			buf = appendAttr(buf, prefix, child, pk, pv, pb)
+			buf = appendAttr(buf, prefix, child, rep, groups, pk, pv, pb)
 		}
 	} else {
+		if rep != nil {
+			a = rep(groups, a)
+			if a.Equal(slog.Attr{}) {
+				return buf
+			}
+			a.Value = a.Value.Resolve()
+		}
+
 		buf = append(buf, ' ')
 
 		buf = pk.AppendFormat(buf)
