@@ -4,7 +4,6 @@ package testing
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"strings"
 	gotesting "testing"
 
@@ -59,13 +58,12 @@ func ParseTextLogs(t *gotesting.T, in []byte, show bool) []map[string]any {
 		}
 
 		m := make(map[string]any)
-		for _, c := range bytes.Split(line, []byte{' '}) {
-			eqidx := bytes.Index(c, []byte{'='})
-			if eqidx == -1 {
-				panic(fmt.Sprintf("%02d: line:%q, component:%q, eqidx:%d", i+1, line, c, eqidx))
+		for {
+			var key, value []byte
+			line, key, value = nextTextComponent(line)
+			if len(key) == 0 || len(value) == 0 {
+				break
 			}
-			key := c[:eqidx]
-			value := c[eqidx+1:]
 			m[string(key)] = string(value)
 		}
 		m = group(m)
@@ -75,6 +73,43 @@ func ParseTextLogs(t *gotesting.T, in []byte, show bool) []map[string]any {
 		ms = append(ms, m)
 	}
 	return ms
+}
+
+func nextTextComponent(b []byte) (remaining, key, value []byte) {
+	// key
+	eqidx := bytes.IndexByte(b, '=')
+	if eqidx == -1 {
+		return nil, nil, nil
+	}
+
+	// value
+	start := eqidx + 1
+	if len(b) <= start {
+		return nil, b[:eqidx], nil
+	}
+	if b[start] != '"' {
+		bb := b[start:]
+		spidx := bytes.IndexByte(bb, ' ')
+		if spidx == -1 {
+			return nil, b[:eqidx], bb
+		}
+		return bb[spidx+1:], b[:eqidx], bb[:spidx]
+	}
+	start++
+	for {
+		bb := b[start:]
+		qtidx := bytes.IndexByte(bb, '"')
+		btidx := bytes.IndexByte(bb, '\\')
+		if btidx == qtidx-1 {
+			start = qtidx + 1
+			continue
+		}
+
+		if qtidx == -1 {
+			return nil, b[:eqidx], b[eqidx+1:]
+		}
+		return b[start+qtidx+1:], b[:eqidx], b[eqidx+1 : start+qtidx]
+	}
 }
 
 func group(m map[string]any) map[string]any {
