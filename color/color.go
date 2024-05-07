@@ -16,7 +16,7 @@ import (
 type ColorHandler struct {
 	scheme Scheme
 
-	opts slog.HandlerOptions
+	opts HandlerOptions
 
 	attrs  []byte
 	groups []string
@@ -30,7 +30,16 @@ type ColorHandler struct {
 	cacheTimeFormat string
 }
 
-func NewHandler(w io.Writer, opts *slog.HandlerOptions, scheme *Scheme) *ColorHandler {
+type HandlerOptions struct {
+	// from slog.HandlerOptions
+	AddSource   bool
+	Level       slog.Leveler
+	ReplaceAttr func([]string, slog.Attr) slog.Attr
+
+	Compat bool
+}
+
+func NewHandler(w io.Writer, opts *HandlerOptions, scheme *Scheme) *ColorHandler {
 	h := &ColorHandler{
 		mu: &sync.Mutex{},
 		w:  w,
@@ -128,6 +137,10 @@ func (h *ColorHandler) Handle(ctx context.Context, r slog.Record) error {
 		}
 
 		if format != "" {
+			if h.opts.Compat {
+				buf = append(buf, `time="`...)
+			}
+
 			tm := h.scheme.TimePrinter()
 			buf = tm.AppendFormat(buf)
 			if flags&log.LUTC != 0 {
@@ -136,6 +149,10 @@ func (h *ColorHandler) Handle(ctx context.Context, r slog.Record) error {
 				buf = r.Time.AppendFormat(buf, format)
 			}
 			buf = tm.AppendUnformat(buf)
+
+			if h.opts.Compat {
+				buf = append(buf, '"')
+			}
 			buf = append(buf, ' ')
 		}
 	}
@@ -144,25 +161,40 @@ func (h *ColorHandler) Handle(ctx context.Context, r slog.Record) error {
 		fs := runtime.CallersFrames([]uintptr{r.PC})
 		f, _ := fs.Next()
 
+		if h.opts.Compat {
+			buf = append(buf, `source="`...)
+		}
+
 		src := h.scheme.SourcePrinter()
 		buf = src.AppendFormat(buf)
 		if h.opts.AddSource || flaglongfile {
 			buf = append(buf, f.File...)
 			buf = append(buf, ':')
 			buf = fmt.Appendf(buf, "%d", f.Line)
-			buf = append(buf, ':')
-			buf = append(buf, ' ')
+			if !h.opts.Compat {
+				buf = append(buf, ':')
+				buf = append(buf, ' ')
+			}
 		} else {
 			buf = append(buf, filepath.Base(f.File)...)
 			buf = append(buf, ':')
 			buf = fmt.Appendf(buf, "%d", f.Line)
-			buf = append(buf, ':')
-			buf = append(buf, ' ')
+			if !h.opts.Compat {
+				buf = append(buf, ':')
+				buf = append(buf, ' ')
+			}
 		}
 		buf = src.AppendUnformat(buf)
+
+		if h.opts.Compat {
+			buf = append(buf, '"')
+		}
 	}
 
 	lvl := h.scheme.LevelPrinter(level)
+	if h.opts.Compat {
+		buf = append(buf, "level="...)
+	}
 	buf = lvl.AppendFormat(buf)
 	buf = append(buf, level.String()...)
 	buf = lvl.AppendUnformat(buf)
@@ -170,6 +202,9 @@ func (h *ColorHandler) Handle(ctx context.Context, r slog.Record) error {
 	buf = append(buf, ' ')
 
 	msg := h.scheme.MessagePrinter()
+	if h.opts.Compat {
+		buf = append(buf, "msg="...)
+	}
 	buf = msg.AppendFormat(buf)
 	buf = append(buf, r.Message...)
 	buf = msg.AppendUnformat(buf)
@@ -225,7 +260,7 @@ func (h ColorHandler) clone() *ColorHandler {
 }
 
 func appendAttr(buf []byte, prefix string, a slog.Attr, rep func(groups []string, a slog.Attr) slog.Attr, groups []string, pk, pv, pb Colorizer) []byte {
-	a.Value.Resolve()
+	a.Value = a.Value.Resolve()
 
 	if a.Value.Kind() == slog.KindGroup {
 		if prefix == "" {

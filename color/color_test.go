@@ -8,10 +8,12 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"testing/slogtest"
 
 	fatihsan "github.com/fatih/color"
 	"github.com/shu-go/gotwant"
 	"github.com/shu-go/shandler/color"
+	stesting "github.com/shu-go/shandler/testing"
 )
 
 type logbackup struct {
@@ -94,7 +96,7 @@ func TestColor(t *testing.T) {
 
 	t.Run("ReplaceAttr", func(t *testing.T) {
 		cb.Reset()
-		cl := slog.New(color.NewHandler(cb, &slog.HandlerOptions{
+		cl := slog.New(color.NewHandler(cb, &color.HandlerOptions{
 			ReplaceAttr: func(group []string, a slog.Attr) slog.Attr {
 				fmt.Fprintf(os.Stderr, "group: %+v\n", group)
 				if strings.HasPrefix(a.Key, "str") {
@@ -117,6 +119,21 @@ func TestColor(t *testing.T) {
 		gotwant.Test(t, cb.String(), "INFO message str0=VALUE1 grp1.int1=2 grp1.grp2.str1=VALUE1 grp1.grp2.int2=6\n", gotwant.Format("%q"))
 
 	})
+
+	t.Run("slogtest", func(t *testing.T) {
+		defer backup().restore()
+		log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+		cb.Reset()
+		h := color.NewHandler(cb, &color.HandlerOptions{Compat: true}, color.DefaultNilScheme())
+
+		err := slogtest.TestHandler(h, func() []map[string]any {
+			return stesting.ParseTextLogs(t, cb.Bytes(), true)
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
 }
 
 func TestColorShowcase(t *testing.T) {
@@ -125,9 +142,10 @@ func TestColorShowcase(t *testing.T) {
 	scheme := color.DefaultDarkScheme()
 	scheme.Level[slog.LevelDebug] = color.NewColor(fatihsan.FgHiWhite, fatihsan.BlinkRapid)
 
+	defer backup().restore()
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	h := color.NewHandler(os.Stderr, &slog.HandlerOptions{
+	h := color.NewHandler(os.Stderr, &color.HandlerOptions{
 		//AddSource: true,
 		Level: slog.LevelDebug,
 	}, scheme)
