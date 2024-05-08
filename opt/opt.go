@@ -45,6 +45,7 @@ func NewHandler(newfunc NewHandlerFunc, opts *slog.HandlerOptions) *OptHandler {
 	h := &OptHandler{
 		inner:   newfunc(opts),
 		newfunc: newfunc,
+		mu:      &sync.Mutex{},
 	}
 	if opts != nil {
 		h.opts = *opts
@@ -65,18 +66,26 @@ func (h *OptHandler) Handle(ctx context.Context, r slog.Record) error {
 }
 
 func (h *OptHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	return &OptHandler{
 		inner:   h.inner.WithAttrs(attrs),
 		newfunc: h.newfunc,
 		opts:    h.opts,
+		mu:      h.mu,
 	}
 }
 
 func (h *OptHandler) WithGroup(name string) slog.Handler {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	return &OptHandler{
 		inner:   h.inner.WithGroup(name),
 		newfunc: h.newfunc,
 		opts:    h.opts,
+		mu:      h.mu,
 	}
 }
 
@@ -86,16 +95,25 @@ func renew(h *OptHandler) {
 }
 
 func (h *OptHandler) AddSource(addSource bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	h.opts.AddSource = addSource
 	renew(h)
 }
 
 func (h *OptHandler) Level(level slog.Level) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	h.opts.Level = level
 	renew(h)
 }
 
 func (h *OptHandler) ReplaceAttr(replaceAttrr func(groups []string, a slog.Attr) slog.Attr) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	h.opts.ReplaceAttr = replaceAttrr
 	renew(h)
 }
